@@ -1,0 +1,35 @@
+name: Docker build and smoke test
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build container
+        run: docker build -t novus:test .
+      - name: Verify app and persistent form storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker volume create novus_test
+          docker run -d --name novus-test -p 3000:3000 -v novus_test:/app/data novus:test
+          trap 'docker logs novus-test; docker rm -f novus-test; docker volume rm novus_test' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://localhost:3000/api/health; then break; fi
+            sleep 2
+          done
+          curl -fsS http://localhost:3000/ | grep -q NOVUS
+          curl -fsS -o /dev/null http://localhost:3000/arbat.webp
+          status=$(curl -sS -o /tmp/lead-response -w '%{http_code}' -H 'Content-Type: application/json' -H 'Origin: http://localhost:3000' --data '{"name":"CI test","contact":"test@example.com","task":"Smoke test"}' http://localhost:3000/api/leads)
+          test "$status" = 201
+          docker restart novus-test
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://localhost:3000/api/health; then break; fi
+            sleep 2
+          done
+          docker exec novus-test node -e "const {DatabaseSync}=require('node:sqlite'); const db=new DatabaseSync('/app/data/leads.sqlite'); if(db.prepare('SELECT COUNT(*) AS n FROM leads').get().n!==1)process.exit(1);db.close()"

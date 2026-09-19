@@ -1,0 +1,19 @@
+services:
+  novus:
+    build: .
+    image: novus-site:local
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      DB_PATH: /app/data/leads.sqlite
+    volumes:
+      - novus_data:/app/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+volumes:
+  novus_data:
